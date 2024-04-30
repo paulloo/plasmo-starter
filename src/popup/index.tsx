@@ -1,25 +1,36 @@
 import { useEffect, useState } from "react"
-import { sendToBackground } from "@plasmohq/messaging"
+import { sendToBackground, sendToContentScript } from "@plasmohq/messaging"
 
 function IndexPopup() {
   const [data, setData] = useState("")
+  const [selector, setSelector] = useState("#itero")
+  const [csResponse, setCsData] = useState("")
+  const [pong, setPong] = useState('')
 
 
-  async function handleBackgroundMessage() {
+  async function handleBackgroundMessage(data) {
     const resp = await sendToBackground({
       name: "ping",
       body: {
-        id: 123
+        id: data || 'none'
       }
     })
     
-    console.log(resp)
+    console.log(resp.message)
+    setPong(resp.message)
   }
 
 
   useEffect(() => {
-    handleBackgroundMessage()
+    
+
+    return () => {
+     
+    }
   }, [])
+
+
+  
 
   return (
     <div
@@ -40,6 +51,13 @@ function IndexPopup() {
       <a href="https://docs.plasmo.com" target="_blank">
         View Docs
       </a>
+      
+      <button
+        onClick={() => {
+          handleBackgroundMessage(data)
+        }}>
+        ping ping
+      </button>
       <button
         onClick={() => {
           chrome.tabs.create({
@@ -69,6 +87,22 @@ function IndexPopup() {
         }}>
         iframe mounting
       </button>
+
+      <input value={selector} onChange={(e) => setSelector(e.target.value)} />
+      <button
+        onClick={async () => {
+          const csResponse = await sendToContentScript({
+            name: "query-selector-text",
+            body: selector
+          })
+          console.log("csResponse: ", csResponse)
+          setCsData(csResponse)
+        }}>
+        Query Text on Web Page
+      </button>
+      <br />
+      <p>Text Data:{csResponse}</p>
+      <div>{pong}</div>
     </div>
   )
 }

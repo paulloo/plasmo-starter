@@ -3,11 +3,14 @@ import type { PlasmoCSConfig } from "plasmo"
 import { useMessage } from "@plasmohq/messaging/hook"
 
 export const config: PlasmoCSConfig = {
-  all_frames: true
+  // all_frames: true
+  
+  matches: ["https://www.baidu.com/*"]
 }
 
 const QueryTextAnywhere = () => {
   const { data } = useMessage<string, string>(async (req, res) => {
+    console.log(document.querySelector(req.body))
     res.send(document.querySelector(req.body).textContent)
   })
   return (
