@@ -3,7 +3,7 @@ import { getPort } from "@plasmohq/messaging/background"
 
 const handler: PlasmoMessaging.MessageHandler = async (req, res) => {
   const { a, b } = req.body
-
+  console.log(a, b)
   const port = getPort("mail")
   port.postMessage("ADDING TWO NUMBERS EH?")
   res.send(a + b + 1)

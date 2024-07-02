@@ -1,7 +1,9 @@
 import { useEffect } from "react"
 
 function IndexPage() {
-  useEffect(() => window.clientHub.connect(), [])
+  useEffect(() => {
+    window.clientHub?.connect()
+  }, [])
 
   return (
     <div style={{ marginTop: "50px" }}>
@@ -21,7 +23,7 @@ function IndexPage() {
       <div>
         <button
           onClick={async () => {
-            window.clientHub.send("This is a message from Tab A")
+            window.clientHub?.send("This is a message from Tab A")
           }}>
           Send Message From A
         </button>

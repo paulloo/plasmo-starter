@@ -6,13 +6,17 @@
   "author": "paulloo",
   "scripts": {
     "dev": "plasmo dev",
+    "dev:next": "next dev --port 1947",
     "build": "plasmo build",
     "package": "plasmo package"
   },
   "dependencies": {
     "@plasmohq/messaging": "^0.6.2",
     "@plasmohq/selector": "^0.0.5",
-    "plasmo": "0.85.2",
+    "@plasmohq/storage": "^1.11.0",
+    "axios": "^1.7.2",
+    "next": "^14.2.4",
+    "plasmo": "0.88.0",
     "react": "18.2.0",
     "react-dom": "18.2.0"
   },
@@ -22,30 +26,34 @@
     "@types/node": "20.11.5",
     "@types/react": "18.2.48",
     "@types/react-dom": "18.2.18",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
     "prettier": "3.2.4",
+    "tailwindcss": "^3.4.4",
     "typescript": "5.3.3"
   },
   "manifest": {
     "host_permissions": [
-      "https://*/*"
+      "https://*/*",
+      "http://*/*"
     ],
     "externally_connectable": {
       "matches": [
-        "*://*.localhost.com/*"
+        "*://*.localhost/*"
       ]
     },
     "permissions": [
       "scripting",
-      "activeTab"
+      "activeTab",
+      "tabs",
+      "storage"
     ],
     "web_accessible_resources": [
       {
         "matches": [
           "<all_urls>"
         ],
-        "resources": [
-          "tabs/delta-flyer.html"
-        ]
+        "resources": []
       }
     ]
   }

@@ -6,7 +6,6 @@ interface Window {
     }
     clientHub: {
       description: string
-      isConnected: () => boolean
       connect: () => void
       send: (message: string) => void
       port?: chrome.runtime.Port
