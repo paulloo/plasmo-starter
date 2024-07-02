@@ -1,5 +1,5 @@
 import axios from "axios"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import {
   sendToBackground,
@@ -8,16 +8,56 @@ import {
 } from "@plasmohq/messaging"
 import { Storage } from "@plasmohq/storage"
 import { useStorage } from "@plasmohq/storage/hook"
-
+import { padZero, countDown } from '~utils'
+import dayjs from "dayjs"
 import "../styles/main.css"
 
 function IndexPopup() {
+  const timerRef = useRef(null);
+  const progressTimerRef = useRef(null)
   const [data, setData] = useState("")
   const [selector, setSelector] = useState("#itero")
   const [csResponse, setCsData] = useState("")
   const [pong, setPong] = useState("")
 
+  const timeRangeList = [{
+    value: 10,
+    label: "10s"
+  }, {
+    value: 30,
+    label: "30s"
+  }, {
+    value: 60,
+    label: "1m"
+  }, {
+    value: 300,
+    label: "5m"
+  }, {
+    value: 600,
+    label: "10m"
+  }, {
+    value: 900,
+    label: "15m"
+  }, {
+    value: 1800,
+    label: "30m"
+  }, {
+    value: 3600,
+    label: "1h"
+  
+  }]
+
   const [hailingFrequency, setHailingFrequency] = useStorage("hailing", "42")
+
+  const [deadLine, setDeadLine] = useStorage("deadLine", "")
+
+  const [countDownDays, setCountDownDays] = useState("")
+  const [countDownTime, setCountDownTime] = useState("")
+
+  // 倒计时状态
+  const [couting, setCouting] = useState(false)
+
+  const [progress, setProgress] = useState(100)
 
   async function handleBackgroundMessage(data) {
     const resp = await sendToBackground({
@@ -60,14 +100,237 @@ function IndexPopup() {
       // 处理错误情况
     }
   }
+  function formatDuration(
+    days: number,
+    hours: number,
+    minutes: number,
+    seconds: number
+  ): string {
+    if (days > 0) return `${days}天`
+    if (hours > 0) return `${hours}时`
+    if (minutes > 0) return `${minutes}分`
+    return `${seconds}秒`
+  }
+
+  function resetCount() {
+
+    clearInterval(timerRef.current )
+    clearInterval(progressTimerRef.current)
+    setCouting(false)
+    chrome.action.setBadgeText({ text: '' })
+    // setDeadLine('')
+  }
+
+  function doCountDown() {
+    if (!deadLine) return;
+    clearInterval(timerRef.current);
+    clearInterval(progressTimerRef.current);
+    setCouting(true);
+    const totalTime = dayjs(deadLine).diff(dayjs(), "millisecond");
+
+    timerRef.current = setInterval(() => {
+      countDownByDeadLine(deadLine);
+    }, 1000);
+
+    progressTimerRef.current = setInterval(() => {
+      const elapsedTime = dayjs(deadLine).diff(dayjs(), "millisecond");
+      const progress = Math.max(0, Math.min(1, elapsedTime / totalTime));
+      console.log("progress: ", progress)
+      setProgress(progress * 100);
+
+      if (progress <= 0) {
+        clearInterval(progressTimerRef.current);
+        resetCount();
+      }
+    }, 300);
+  }
+
+  function goDonePage() {
+    chrome.tabs.create({
+      url: "./tabs/delta-flyer.html",
+    });
+  }
 
   useEffect(() => {
-    return () => {}
-  }, [])
+    doCountDown()
+    return () => {
+      resetCount()
+    }
+  }, [deadLine])
+
+
+  // 根据倒计时的时间来计算 进度条的百分比
+  function countDownProgress(deadLine) {
+    const { days, time, hours, minutes, seconds, ms } = countDown(deadLine)
+    if (ms <= 0) {
+      resetCount()
+      return
+    }
+    return 100 - ms / 1000
+  }
+
+  function countDownByDeadLine(deadLine) {
+    const { days, time, hours, minutes, seconds, ms } = countDown(deadLine)
+    if (ms <= 0) {
+      if(couting) {
+        goDonePage()
+      }
+      resetCount()
+      return
+    }
+    setCountDownTime(time)
+    
+    setCountDownDays(`${days}天`)
+
+    const badge = formatDuration(days, hours, minutes, seconds) // 30秒
+
+    chrome.action.setBadgeText({ text: badge })
+    chrome.action.setBadgeBackgroundColor({ color: [0, 255, 0, 0] })
+  }
+
+  function setting() {
+    if(couting) {
+      setDeadLine('')
+      resetCount()
+      return
+    }
+    doCountDown()
+  }
+
+  function handleRange(item) {
+    setDeadLine('')
+    resetCount()
+    const _dayTime = deadLine? dayjs(deadLine): dayjs()
+    
+    const _deadLine = _dayTime.add(item.value, 'second').format('YYYY-MM-DD HH:mm:ss')
+    countDownByDeadLine(_deadLine)
+    setDeadLine(_deadLine)
+  }
 
   return (
-    <div className="w-full p-12">
-      <img className="inline-block h-6 w-6 rounded-full ring-2 ring-white" src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" alt="" />
+    <div className="w-96">
+      <section id="main" className="flex h-full flex-col justify-between">
+        {/* <div className="border-b-2 p-4 dark:border-gray-800">
+          <h1 className="text-center text-xl font-semibold leading-6">
+            倒计时
+          </h1>
+        </div> */}
+        <div className="settings settingsTime cursor-pointer p-2.5 pt-0">
+          {
+            timeRangeList.map(item => {
+              return (<span className="timeBtn" onClick={() => handleRange(item)}><p className="small inline-flex m-0 p-[2px_3px] rounded-md">+</p>{item.label}</span>)
+            })
+          }
+        </div>
+        {couting ? (
+          <div
+            id="time"
+            className="relative px-4 py-8 text-center font-semibold dark:text-gray-400">
+            {/* <div className="font-mono text-5xl font-extralight block">{countDownDays}</div> */}
+            <div className="font-mono text-5xl font-extralight">
+              {countDownTime}
+            </div>
+            <div className="absolute right-4 top-2 text-center text-base">
+              {countDownDays}
+            </div>
+            <div>
+              <div className="text-sm font-medium text-gray-500 dark:text-gray-400">Staff</div>
+              <div className="flex items-center mb-3">
+                  <div className="w-full bg-gray-200 rounded h-2.5 dark:bg-gray-700 me-2">
+                      <div className="bg-blue-600 h-2.5 rounded dark:bg-blue-500" style={{width: `${progress}%`}}></div>
+                  </div>
+                  <span className="text-sm font-medium text-gray-500 dark:text-gray-400">8.8</span>
+              </div>
+            </div>
+
+            <div className="flex items-center mb-5">
+              <svg className="w-4 h-4 ms-1 text-yellow-300" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 22 20">
+                  <path d="M20.924 7.625a1.523 1.523 0 0 0-1.238-1.044l-5.051-.734-2.259-4.577a1.534 1.534 0 0 0-2.752 0L7.365 5.847l-5.051.734A1.535 1.535 0 0 0 1.463 9.2l3.656 3.563-.863 5.031a1.532 1.532 0 0 0 2.226 1.616L11 17.033l4.518 2.375a1.534 1.534 0 0 0 2.226-1.617l-.863-5.03L20.537 9.2a1.523 1.523 0 0 0 .387-1.575Z"/>
+              </svg>
+              <svg className="w-4 h-4 ms-1 text-yellow-300" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 22 20">
+                  <path d="M20.924 7.625a1.523 1.523 0 0 0-1.238-1.044l-5.051-.734-2.259-4.577a1.534 1.534 0 0 0-2.752 0L7.365 5.847l-5.051.734A1.535 1.535 0 0 0 1.463 9.2l3.656 3.563-.863 5.031a1.532 1.532 0 0 0 2.226 1.616L11 17.033l4.518 2.375a1.534 1.534 0 0 0 2.226-1.617l-.863-5.03L20.537 9.2a1.523 1.523 0 0 0 .387-1.575Z"/>
+              </svg>
+              <svg className="w-4 h-4 ms-1 text-yellow-300" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 22 20">
+                  <path d="M20.924 7.625a1.523 1.523 0 0 0-1.238-1.044l-5.051-.734-2.259-4.577a1.534 1.534 0 0 0-2.752 0L7.365 5.847l-5.051.734A1.535 1.535 0 0 0 1.463 9.2l3.656 3.563-.863 5.031a1.532 1.532 0 0 0 2.226 1.616L11 17.033l4.518 2.375a1.534 1.534 0 0 0 2.226-1.617l-.863-5.03L20.537 9.2a1.523 1.523 0 0 0 .387-1.575Z"/>
+              </svg>
+              <svg className="w-4 h-4 ms-1 text-yellow-300" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 22 20">
+                  <path d="M20.924 7.625a1.523 1.523 0 0 0-1.238-1.044l-5.051-.734-2.259-4.577a1.534 1.534 0 0 0-2.752 0L7.365 5.847l-5.051.734A1.535 1.535 0 0 0 1.463 9.2l3.656 3.563-.863 5.031a1.532 1.532 0 0 0 2.226 1.616L11 17.033l4.518 2.375a1.534 1.534 0 0 0 2.226-1.617l-.863-5.03L20.537 9.2a1.523 1.523 0 0 0 .387-1.575Z"/>
+              </svg>
+              <svg className="w-4 h-4 ms-1 text-gray-300 dark:text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 22 20">
+                  <path d="M20.924 7.625a1.523 1.523 0 0 0-1.238-1.044l-5.051-.734-2.259-4.577a1.534 1.534 0 0 0-2.752 0L7.365 5.847l-5.051.734A1.535 1.535 0 0 0 1.463 9.2l3.656 3.563-.863 5.031a1.532 1.532 0 0 0 2.226 1.616L11 17.033l4.518 2.375a1.534 1.534 0 0 0 2.226-1.617l-.863-5.03L20.537 9.2a1.523 1.523 0 0 0 .387-1.575Z"/>
+              </svg>
+            </div>
+
+            <div className="text-center text-base">{deadLine}</div>
+          </div>
+        ) : (
+          <div
+            id="time"
+            className="relative px-4 py-8 text-center font-semibold dark:text-gray-400">
+            {/* <div className="font-mono text-5xl font-extralight block">{countDownDays}</div> */}
+            {/* <div className="font-mono text-5xl font-extralight">
+              {countDownTime}
+            </div> */}
+            <div className="absolute right-4 top-2 text-center text-base">
+              <input
+                type="date"
+                onChange={(e) => setDeadLine(e.target.value)}
+                value={deadLine}
+              />
+            </div>
+            <div className="text-center text-base">{deadLine}</div>
+          </div>
+        )}
+
+        <div
+          id="footer"
+          className="grid grid-cols-2 justify-center gap-x-2 divide-x border-t-2 py-4 text-xs font-semibold dark:divide-gray-800 dark:border-gray-800">
+          <div className="flex items-center justify-center text-gray-500">
+            <a
+              href="https://utctime.info/"
+              rel="noopener noreferrer"
+              target="_blank"
+              className="flex items-center gap-x-1">
+              UTCTime
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                aria-hidden="true"
+                className="h-4 w-4">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"></path>
+              </svg>
+            </a>
+          </div>
+          <div
+            className="flex items-center justify-center text-gray-500"
+            onClick={() => setting()}>
+            <button className="flex items-center justify-center gap-x-1 font-semibold">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                aria-hidden="true"
+                className="h-5 w-5">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75"></path>
+              </svg>
+
+              {couting ? "取消" : "开始"}
+            </button>
+          </div>
+        </div>
+      </section>
+      {/* <img className="inline-block h-6 w-6 rounded-full ring-2 ring-white" src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" alt="" />
       <button
         onClick={() => {
           articleSpider();
@@ -177,9 +440,9 @@ function IndexPopup() {
       </button>
       <br />
       <p>Text Data:{csResponse}</p>
-      <div>{pong}</div>
+      <div>{pong}</div> */}
     </div>
-  );
+  )
 }
 
 export default IndexPopup
