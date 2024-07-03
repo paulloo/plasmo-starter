@@ -11,6 +11,9 @@ import { useStorage } from "@plasmohq/storage/hook"
 import { padZero, countDown } from '~utils'
 import dayjs from "dayjs"
 import "../styles/main.css"
+import StarRating from "./StarRating"
+
+const storage = new Storage()
 
 function IndexPopup() {
   const timerRef = useRef(null);
@@ -49,6 +52,7 @@ function IndexPopup() {
 
   const [hailingFrequency, setHailingFrequency] = useStorage("hailing", "42")
 
+  const [allAddedSeconds, setAllAddedSeconds] = useStorage("allAddedSeconds", 0)
   const [deadLine, setDeadLine] = useStorage("deadLine", "")
 
   const [countDownDays, setCountDownDays] = useState("")
@@ -106,19 +110,30 @@ function IndexPopup() {
     minutes: number,
     seconds: number
   ): string {
-    if (days > 0) return `${days}天`
-    if (hours > 0) return `${hours}时`
-    if (minutes > 0) return `${minutes}分`
-    return `${seconds}秒`
+    if (days > 0) return `${days}d`
+    if (hours > 0) return `${hours}h`
+    if (minutes > 0) return `${minutes}m`
+    return `${seconds}m`
   }
 
-  function resetCount() {
+  async function resetCount() {
 
     clearInterval(timerRef.current )
     clearInterval(progressTimerRef.current)
     setCouting(false)
     chrome.action.setBadgeText({ text: '' })
     // setDeadLine('')
+    setAllAddedSeconds(0)
+    const resp = await sendToBackground({
+      name: "countdown",
+      body: {
+        action: 'stop',
+        deadLine: dayjs(deadLine).valueOf()
+      }
+    })
+
+    
+    console.log('stop: ', resp)
   }
 
   function doCountDown() {
@@ -135,7 +150,6 @@ function IndexPopup() {
     progressTimerRef.current = setInterval(() => {
       const elapsedTime = dayjs(deadLine).diff(dayjs(), "millisecond");
       const progress = Math.max(0, Math.min(1, elapsedTime / totalTime));
-      console.log("progress: ", progress)
       setProgress(progress * 100);
 
       if (progress <= 0) {
@@ -145,42 +159,20 @@ function IndexPopup() {
     }, 300);
   }
 
-  function goDonePage() {
-    chrome.tabs.create({
-      url: "./tabs/delta-flyer.html",
-    });
-  }
-
-  useEffect(() => {
-    doCountDown()
-    return () => {
-      resetCount()
-    }
-  }, [deadLine])
-
-
-  // 根据倒计时的时间来计算 进度条的百分比
-  function countDownProgress(deadLine) {
-    const { days, time, hours, minutes, seconds, ms } = countDown(deadLine)
-    if (ms <= 0) {
-      resetCount()
-      return
-    }
-    return 100 - ms / 1000
-  }
 
   function countDownByDeadLine(deadLine) {
+    if(!deadLine) {
+      return
+    }
+    setCouting(true)
     const { days, time, hours, minutes, seconds, ms } = countDown(deadLine)
     if (ms <= 0) {
-      if(couting) {
-        goDonePage()
-      }
       resetCount()
       return
     }
     setCountDownTime(time)
     
-    setCountDownDays(`${days}天`)
+    setCountDownDays(`${days}d`)
 
     const badge = formatDuration(days, hours, minutes, seconds) // 30秒
 
@@ -188,24 +180,123 @@ function IndexPopup() {
     chrome.action.setBadgeBackgroundColor({ color: [0, 255, 0, 0] })
   }
 
-  function setting() {
-    if(couting) {
+  // 用react 状态来控制 这个评价 五星 的星级评价
+
+
+
+  async function setting() {
+
+    // deadLine 必须要在当前之间之后
+    const afterNow = !deadLine || dayjs(deadLine).isAfter(dayjs())
+    debugger
+    console.log("dayjs(deadLine).isAfter(dayjs()): ", dayjs(deadLine).isAfter(dayjs()))
+    if(couting || afterNow) {
       setDeadLine('')
       resetCount()
       return
     }
-    doCountDown()
+    
+    setCouting(true)
+    const resp = await sendToBackground({
+      name: "countdown",
+      body: {
+        action: 'start',
+        deadLine: dayjs(deadLine).valueOf()
+      }
+    })
+    console.log('start: ', resp)
+
+    // if(couting) {
+    //   setDeadLine('')
+    //   resetCount()
+    //   return
+    // }
+    // doCountDown()
   }
 
-  function handleRange(item) {
+  async function handleRange(item) {
     setDeadLine('')
-    resetCount()
-    const _dayTime = deadLine? dayjs(deadLine): dayjs()
+    // resetCount()
+
+    // deadLine 必须要在当前之间之后
+    const afterNow = dayjs(deadLine).isAfter(dayjs())
+
+    const _dayTime = deadLine && afterNow? dayjs(deadLine): dayjs()
     
+    setAllAddedSeconds(allAddedSeconds + item.value)
+
     const _deadLine = _dayTime.add(item.value, 'second').format('YYYY-MM-DD HH:mm:ss')
-    countDownByDeadLine(_deadLine)
+    // countDownByDeadLine(_deadLine)
     setDeadLine(_deadLine)
+    setCouting(true)
+
+    const { days, time, hours, minutes, seconds, ms } = countDown(_deadLine)
+    setCountDownTime(time)
+    const resp = await sendToBackground({
+      name: "countdown",
+      body: {
+        action: 'start',
+        deadLine: dayjs(_deadLine).valueOf()
+      }
+    })
+
+    console.log("add Seconds: ", resp)
   }
+
+  async function handleDateChange(date) {
+    setDeadLine(date)
+
+    const resp = await sendToBackground({
+      name: "countdown",
+      body: {
+        action: 'start',
+        deadLine: dayjs(date).valueOf()
+      }
+    })
+
+    console.log('date change: ', resp)
+  }
+
+
+  useEffect(() => {
+    // 发送开始倒计时的消息
+    // chrome.runtime.sendMessage({
+    //   name: "countdown",
+    //   body: {
+    //     deadLine: deadLine
+    //   }
+    // });
+
+    async function getLocalDate() {
+
+      const localDeadLine = await storage.get("deadLine") || ''
+      console.log('localDeadLine: ', localDeadLine)
+      console.log(' come in deadLine: ', deadLine)
+    }
+
+    getLocalDate()
+  
+    countDownByDeadLine(deadLine)
+    
+    // 监听倒计时更新
+    const messageListener = (message) => {
+      if (message.name === "countdownUpdate") {
+        setCountDownTime(message.body.time)
+        setCouting(true)
+      } else if (message.name === "countdownFinished") {
+        console.log("Countdown finished");
+      } else if (message.name === 'countdownProgress') {
+        setProgress(message.body.progress)
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(messageListener);
+
+    // 清理监听器
+    return () => {
+      chrome.runtime.onMessage.removeListener(messageListener);
+    };
+  }, [deadLine]);
 
   return (
     <div className="w-96">
@@ -218,7 +309,7 @@ function IndexPopup() {
         <div className="settings settingsTime cursor-pointer p-2.5 pt-0">
           {
             timeRangeList.map(item => {
-              return (<span className="timeBtn" onClick={() => handleRange(item)}><p className="small inline-flex m-0 p-[2px_3px] rounded-md">+</p>{item.label}</span>)
+              return (<span className="timeBtn" onClick={() => handleRange(item)} key={item.value}><p className="small inline-flex m-0 p-[2px_3px] rounded-md">+</p>{item.label}</span>)
             })
           }
         </div>
@@ -234,32 +325,13 @@ function IndexPopup() {
               {countDownDays}
             </div>
             <div>
-              <div className="text-sm font-medium text-gray-500 dark:text-gray-400">Staff</div>
               <div className="flex items-center mb-3">
                   <div className="w-full bg-gray-200 rounded h-2.5 dark:bg-gray-700 me-2">
                       <div className="bg-blue-600 h-2.5 rounded dark:bg-blue-500" style={{width: `${progress}%`}}></div>
                   </div>
-                  <span className="text-sm font-medium text-gray-500 dark:text-gray-400">8.8</span>
               </div>
             </div>
 
-            <div className="flex items-center mb-5">
-              <svg className="w-4 h-4 ms-1 text-yellow-300" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 22 20">
-                  <path d="M20.924 7.625a1.523 1.523 0 0 0-1.238-1.044l-5.051-.734-2.259-4.577a1.534 1.534 0 0 0-2.752 0L7.365 5.847l-5.051.734A1.535 1.535 0 0 0 1.463 9.2l3.656 3.563-.863 5.031a1.532 1.532 0 0 0 2.226 1.616L11 17.033l4.518 2.375a1.534 1.534 0 0 0 2.226-1.617l-.863-5.03L20.537 9.2a1.523 1.523 0 0 0 .387-1.575Z"/>
-              </svg>
-              <svg className="w-4 h-4 ms-1 text-yellow-300" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 22 20">
-                  <path d="M20.924 7.625a1.523 1.523 0 0 0-1.238-1.044l-5.051-.734-2.259-4.577a1.534 1.534 0 0 0-2.752 0L7.365 5.847l-5.051.734A1.535 1.535 0 0 0 1.463 9.2l3.656 3.563-.863 5.031a1.532 1.532 0 0 0 2.226 1.616L11 17.033l4.518 2.375a1.534 1.534 0 0 0 2.226-1.617l-.863-5.03L20.537 9.2a1.523 1.523 0 0 0 .387-1.575Z"/>
-              </svg>
-              <svg className="w-4 h-4 ms-1 text-yellow-300" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 22 20">
-                  <path d="M20.924 7.625a1.523 1.523 0 0 0-1.238-1.044l-5.051-.734-2.259-4.577a1.534 1.534 0 0 0-2.752 0L7.365 5.847l-5.051.734A1.535 1.535 0 0 0 1.463 9.2l3.656 3.563-.863 5.031a1.532 1.532 0 0 0 2.226 1.616L11 17.033l4.518 2.375a1.534 1.534 0 0 0 2.226-1.617l-.863-5.03L20.537 9.2a1.523 1.523 0 0 0 .387-1.575Z"/>
-              </svg>
-              <svg className="w-4 h-4 ms-1 text-yellow-300" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 22 20">
-                  <path d="M20.924 7.625a1.523 1.523 0 0 0-1.238-1.044l-5.051-.734-2.259-4.577a1.534 1.534 0 0 0-2.752 0L7.365 5.847l-5.051.734A1.535 1.535 0 0 0 1.463 9.2l3.656 3.563-.863 5.031a1.532 1.532 0 0 0 2.226 1.616L11 17.033l4.518 2.375a1.534 1.534 0 0 0 2.226-1.617l-.863-5.03L20.537 9.2a1.523 1.523 0 0 0 .387-1.575Z"/>
-              </svg>
-              <svg className="w-4 h-4 ms-1 text-gray-300 dark:text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 22 20">
-                  <path d="M20.924 7.625a1.523 1.523 0 0 0-1.238-1.044l-5.051-.734-2.259-4.577a1.534 1.534 0 0 0-2.752 0L7.365 5.847l-5.051.734A1.535 1.535 0 0 0 1.463 9.2l3.656 3.563-.863 5.031a1.532 1.532 0 0 0 2.226 1.616L11 17.033l4.518 2.375a1.534 1.534 0 0 0 2.226-1.617l-.863-5.03L20.537 9.2a1.523 1.523 0 0 0 .387-1.575Z"/>
-              </svg>
-            </div>
 
             <div className="text-center text-base">{deadLine}</div>
           </div>
@@ -268,19 +340,23 @@ function IndexPopup() {
             id="time"
             className="relative px-4 py-8 text-center font-semibold dark:text-gray-400">
             {/* <div className="font-mono text-5xl font-extralight block">{countDownDays}</div> */}
-            {/* <div className="font-mono text-5xl font-extralight">
-              {countDownTime}
-            </div> */}
+            <div className="font-mono text-5xl font-extralight">
+              --:--:--
+            </div>
             <div className="absolute right-4 top-2 text-center text-base">
               <input
                 type="date"
-                onChange={(e) => setDeadLine(e.target.value)}
+                onChange={(e) => handleDateChange(e.target.value)}
                 value={deadLine}
               />
             </div>
             <div className="text-center text-base">{deadLine}</div>
           </div>
         )}
+
+        <StarRating />
+
+        
 
         <div
           id="footer"
@@ -296,13 +372,13 @@ function IndexPopup() {
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
-                stroke-width="1.5"
+                strokeWidth="1.5"
                 stroke="currentColor"
                 aria-hidden="true"
                 className="h-4 w-4">
                 <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                   d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"></path>
               </svg>
             </a>
@@ -315,13 +391,13 @@ function IndexPopup() {
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
-                stroke-width="1.5"
+                strokeWidth="1.5"
                 stroke="currentColor"
                 aria-hidden="true"
                 className="h-5 w-5">
                 <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                   d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75"></path>
               </svg>
 
@@ -340,7 +416,7 @@ function IndexPopup() {
         文章采集
       </button>
       <div>
-        <label for="price" className="block text-sm font-medium leading-6 text-gray-900">Price</label>
+        <label htmlFor="price" className="block text-sm font-medium leading-6 text-gray-900">Price</label>
         <div className="relative mt-2 rounded-md shadow-sm">
           <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
             <span className="text-gray-500 sm:text-sm">$</span>
@@ -350,7 +426,7 @@ function IndexPopup() {
           onChange={(e) => setHailingFrequency(e.target.value)}
           type="text" name="price" id="price" className="block w-full rounded-md border-0 py-1.5 pl-7 pr-20 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" placeholder="0.00" />
           <div className="absolute inset-y-0 right-0 flex items-center">
-            <label for="currency" className="sr-only">Currency</label>
+            <label htmlFor="currency" className="sr-only">Currency</label>
             <select id="currency" name="currency" className="h-full rounded-md border-0 bg-transparent py-0 pl-2 pr-7 text-gray-500 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm">
               <option>USD</option>
               <option>CAD</option>

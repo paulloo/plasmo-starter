@@ -24,6 +24,6 @@ export function countDown(date) {
     minutes: minutes,
     seconds: seconds,
     ms: duration.asMilliseconds(),
-    time: `${padZero(hours)}时${padZero(minutes)}分${padZero(seconds)}秒`
+    time: `${padZero(hours)}:${padZero(minutes)}:${padZero(seconds)}`
   }
 }

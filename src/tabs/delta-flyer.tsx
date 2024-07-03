@@ -32,6 +32,21 @@ export default function DeltaFlyerPage() {
           }}>
           Send Port
         </button>
+
+        <button
+          onClick={async () => {
+            // 获取当前激活的标签页
+            chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+              // tabs[0] 是当前激活的标签页
+              const currentTabId = tabs[0].id;
+              if (currentTabId) {
+                // 使用 chrome.tabs.remove 关闭当前标签页
+                chrome.tabs.remove(currentTabId);
+              }
+            });
+          }}>
+          close tab
+        </button>
       </div>
     )
   }
