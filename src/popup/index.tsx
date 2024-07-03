@@ -363,11 +363,11 @@ function IndexPopup() {
           className="grid grid-cols-2 justify-center gap-x-2 divide-x border-t-2 py-4 text-xs font-semibold dark:divide-gray-800 dark:border-gray-800">
           <div className="flex items-center justify-center text-gray-500">
             <a
-              href="https://utctime.info/"
+              href="https://ddp.life/"
               rel="noopener noreferrer"
               target="_blank"
               className="flex items-center gap-x-1">
-              UTCTime
+              Help
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
